@@ -1,20 +1,23 @@
 from flask import Flask, request, jsonify, send_from_directory
 import os
+import json
+
+from src.audio_transcriber import AudioTranscriber
 
 app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
+transcriber = AudioTranscriber(model_size="base")
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    # Check for file part in the request
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400
 
     file = request.files['file']
-    file_type = request.form.get('file_type', 'unknown')  # "audio" or "text"
+    file_type = request.form.get('file_type', 'unknown')
 
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
@@ -22,6 +25,15 @@ def upload_file():
     filename = file.filename
     filepath = os.path.join(UPLOAD_FOLDER, filename)
     file.save(filepath)
+
+    text, timestamp_map = transcriber.transcribe(filepath)
+
+    with open(filepath + '.txt', 'w') as f:
+        f.write(text)
+
+    with open(filepath + '.json', 'w') as f:
+        json.dump(timestamp_map, f)
+
     return jsonify({'message': 'File uploaded successfully', 'filename': filename, 'file_type': file_type}), 200
 
 
