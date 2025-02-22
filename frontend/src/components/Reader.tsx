@@ -7,9 +7,10 @@ import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 interface AudioReaderProps {
   audioFile: File;
   onContextUpdate?: (context: string) => void;
+  onTimeUpdate?: (time: number) => void;
 }
 
-export const AudioReader = ({ audioFile, onContextUpdate }: AudioReaderProps) => {
+export const AudioReader = ({ audioFile, onContextUpdate, onTimeUpdate }: AudioReaderProps) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
@@ -48,10 +49,15 @@ export const AudioReader = ({ audioFile, onContextUpdate }: AudioReaderProps) =>
 
   const handleTimeUpdate = () => {
     if (audioRef.current) {
-      setCurrentTime(audioRef.current.currentTime);
+      const currentTime = audioRef.current.currentTime;
+      setCurrentTime(currentTime);
       
+      // Call both update handlers
+      if (onTimeUpdate) {
+        onTimeUpdate(currentTime);
+      }
       if (onContextUpdate) {
-        const context = `Currently at ${formatTime(audioRef.current.currentTime)} of ${formatTime(audioRef.current.duration)} in audio file: ${audioFile.name}`;
+        const context = `Currently at ${formatTime(currentTime)} of ${formatTime(audioRef.current.duration)} in audio file: ${audioFile.name}`;
         onContextUpdate(context);
       }
     }
