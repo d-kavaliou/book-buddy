@@ -1,12 +1,11 @@
-
 import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Upload } from 'lucide-react';
+import { Music } from 'lucide-react';
 import { Button } from './ui/button';
 import { cn } from '@/lib/utils';
 
 interface FileUploadProps {
-  onFileAccepted: (text: string) => void;
+  onFileAccepted: (file: File) => void;
 }
 
 export const FileUpload = ({ onFileAccepted }: FileUploadProps) => {
@@ -14,21 +13,17 @@ export const FileUpload = ({ onFileAccepted }: FileUploadProps) => {
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
-    const reader = new FileReader();
-    
-    reader.onload = (e) => {
-      const text = e.target?.result as string;
-      onFileAccepted(text);
-    };
-    
-    reader.readAsText(file);
+    onFileAccepted(file);
   }, [onFileAccepted]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      'text/plain': ['.txt'],
-      'application/pdf': ['.pdf'],
+      'audio/mpeg': ['.mp3'],
+      'audio/wav': ['.wav'],
+      'audio/ogg': ['.ogg'],
+      'audio/aac': ['.aac'],
+      'audio/x-m4a': ['.m4a']
     },
     multiple: false,
   });
@@ -43,10 +38,10 @@ export const FileUpload = ({ onFileAccepted }: FileUploadProps) => {
       )}
     >
       <input {...getInputProps()} />
-      <Upload className="w-12 h-12 mb-4 text-primary/50" />
-      <p className="text-lg font-medium mb-2">Drop your book file here</p>
-      <p className="text-sm text-muted-foreground mb-4">or click to select</p>
-      <Button variant="outline">Select File</Button>
+      <Music className="w-12 h-12 mb-4 text-primary/50" />
+      <p className="text-lg font-medium mb-2">Drop your audio file here</p>
+      <p className="text-sm text-muted-foreground mb-4">Supports MP3, WAV, OGG, AAC, M4A</p>
+      <Button variant="outline">Select Audio</Button>
     </div>
   );
 };

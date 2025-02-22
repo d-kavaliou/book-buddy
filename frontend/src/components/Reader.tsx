@@ -1,169 +1,172 @@
-
-import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, SkipBack, MessageSquare } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Play, Pause, SkipBack, SkipForward, MessageSquare } from 'lucide-react';
 import { Button } from './ui/button';
 import { Slider } from './ui/slider';
-import { ScrollArea } from './ui/scroll-area';
-import { Card } from './ui/card';
-import { cn } from '@/lib/utils';
+import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 
-interface ReaderProps {
-  text: string;
-  onAskQuestion: (context: string) => void;
+interface AudioReaderProps {
+  audioFile: File;
+  onContextUpdate?: (context: string) => void;
 }
 
-export const Reader = ({ text, onAskQuestion }: ReaderProps) => {
+export const AudioReader = ({ audioFile, onContextUpdate }: AudioReaderProps) => {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentWordIndex, setCurrentWordIndex] = useState(0);
-  const [words, setWords] = useState<string[]>([]);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const speechRef = useRef<SpeechSynthesis | null>(null);
-  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrl = useRef<string | null>(null);
 
   useEffect(() => {
-    if (text) {
-      setWords(text.split(/\s+/));
-    }
+    audioUrl.current = URL.createObjectURL(audioFile);
     
-    // Initialize speech synthesis
-    speechRef.current = window.speechSynthesis;
+    if (audioRef.current) {
+      audioRef.current.src = audioUrl.current;
+    }
+
     return () => {
-      if (speechRef.current) {
-        speechRef.current.cancel();
+      if (audioUrl.current) {
+        URL.revokeObjectURL(audioUrl.current);
       }
     };
-  }, [text]);
+  }, [audioFile]);
 
   useEffect(() => {
-    if (isPlaying) {
-      startReading();
-    } else {
-      stopReading();
-    }
-  }, [isPlaying, currentWordIndex]);
-
-  const startReading = () => {
-    if (!speechRef.current || words.length === 0) return;
-
-    speechRef.current.cancel();
-    const utterance = new SpeechSynthesisUtterance(words[currentWordIndex]);
-    utteranceRef.current = utterance;
-
-    utterance.onend = () => {
-      if (currentWordIndex < words.length - 1) {
-        setCurrentWordIndex(prev => prev + 1);
+    if (audioRef.current) {
+      if (isPlaying) {
+        audioRef.current.play();
       } else {
-        setIsPlaying(false);
-      }
-    };
-
-    speechRef.current.speak(utterance);
-  };
-
-  const stopReading = () => {
-    if (speechRef.current) {
-      speechRef.current.cancel();
-    }
-  };
-
-  const togglePlayback = () => {
-    setIsPlaying(!isPlaying);
-  };
-
-  const replayWord = () => {
-    if (currentWordIndex > 0) {
-      setCurrentWordIndex(currentWordIndex - 1);
-    }
-  };
-
-  const getCurrentContext = () => {
-    const contextStart = Math.max(0, currentWordIndex - 50);
-    const contextEnd = Math.min(words.length, currentWordIndex + 50);
-    return words.slice(contextStart, contextEnd).join(' ');
-  };
-
-  useEffect(() => {
-    if (scrollRef.current && words.length > 0) {
-      const wordElements = scrollRef.current.getElementsByTagName('span');
-      if (wordElements[currentWordIndex]) {
-        wordElements[currentWordIndex].scrollIntoView({
-          behavior: 'smooth',
-          block: 'center'
-        });
+        audioRef.current.pause();
       }
     }
-  }, [currentWordIndex]);
+  }, [isPlaying]);
+
+  const handleLoadedMetadata = () => {
+    if (audioRef.current) {
+      setDuration(audioRef.current.duration);
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (audioRef.current) {
+      setCurrentTime(audioRef.current.currentTime);
+      
+      if (onContextUpdate) {
+        const context = `Currently at ${formatTime(audioRef.current.currentTime)} of ${formatTime(audioRef.current.duration)} in audio file: ${audioFile.name}`;
+        onContextUpdate(context);
+      }
+    }
+  };
+
+  const handleSliderChange = (value: number[]) => {
+    const time = value[0];
+    setCurrentTime(time);
+    if (audioRef.current) {
+      audioRef.current.currentTime = time;
+    }
+  };
+
+  const skipForward = () => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = Math.min(audioRef.current.currentTime + 10, duration);
+    }
+  };
+
+  const skipBackward = () => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = Math.max(audioRef.current.currentTime - 10, 0);
+    }
+  };
+
+  const formatTime = (timeInSeconds: number) => {
+    const minutes = Math.floor(timeInSeconds / 60);
+    const seconds = Math.floor(timeInSeconds % 60);
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  const handleAskQuestion = () => {
+    if (onContextUpdate && audioRef.current) {
+      const context = `At timestamp ${formatTime(currentTime)} in audio file: ${audioFile.name}`;
+      onContextUpdate(context);
+    }
+  };
+
+  // Format file name for display by removing extension
+  const displayName = audioFile.name.replace(/\.[^/.]+$/, '');
 
   return (
-    <div className="flex flex-col h-full gap-6">
-      <Card className="p-4 glass-panel">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={togglePlayback}
-              className="h-10 w-10"
-            >
-              {isPlaying ? (
-                <Pause className="h-4 w-4" />
-              ) : (
-                <Play className="h-4 w-4" />
+    <Card className="glass-panel">
+      <CardHeader className="pb-2">
+        <CardTitle className="truncate text-lg font-semibold">
+          {displayName}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setIsPlaying(!isPlaying)}
+                className="h-10 w-10"
+              >
+                {isPlaying ? (
+                  <Pause className="h-4 w-4" />
+                ) : (
+                  <Play className="h-4 w-4" />
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={skipBackward}
+                className="h-10 w-10"
+              >
+                <SkipBack className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={skipForward}
+                className="h-10 w-10"
+              >
+                <SkipForward className="h-4 w-4" />
+              </Button>
+            </div>
+            
+            <div className="flex items-center gap-4">
+              <div className="text-sm text-muted-foreground">
+                {formatTime(currentTime)} / {formatTime(duration)}
+              </div>
+              {onContextUpdate && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleAskQuestion}
+                  className="h-10 w-10"
+                >
+                  <MessageSquare className="h-4 w-4" />
+                </Button>
               )}
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={replayWord}
-              className="h-10 w-10"
-            >
-              <SkipBack className="h-4 w-4" />
-            </Button>
+            </div>
           </div>
-          <Slider
-            className="w-full max-w-md"
-            value={[currentWordIndex]}
-            max={words.length - 1}
-            step={1}
-            onValueChange={(value) => {
-              setCurrentWordIndex(value[0]);
-              if (isPlaying) {
-                startReading();
-              }
-            }}
-          />
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => onAskQuestion(getCurrentContext())}
-            className="h-10 w-10"
-          >
-            <MessageSquare className="h-4 w-4" />
-          </Button>
-        </div>
-      </Card>
 
-      <ScrollArea className="flex-1 rounded-lg glass-panel p-6">
-        <div ref={scrollRef} className="reader-content">
-          {words.map((word, index) => (
-            <span
-              key={index}
-              className={cn(
-                'inline-block cursor-pointer px-0.5 rounded transition-colors duration-200',
-                currentWordIndex === index && 'highlighted-word'
-              )}
-              onClick={() => {
-                setCurrentWordIndex(index);
-                if (isPlaying) {
-                  startReading();
-                }
-              }}
-            >
-              {word}{' '}
-            </span>
-          ))}
+          <Slider
+            className="w-full"
+            value={[currentTime]}
+            max={duration}
+            step={0.1}
+            onValueChange={handleSliderChange}
+          />
+
+          <audio
+            ref={audioRef}
+            onLoadedMetadata={handleLoadedMetadata}
+            onTimeUpdate={handleTimeUpdate}
+            onEnded={() => setIsPlaying(false)}
+          />
         </div>
-      </ScrollArea>
-    </div>
+      </CardContent>
+    </Card>
   );
 };
