@@ -65,7 +65,6 @@ class ContextResponse(BaseModel):
     context: str
     start_position: int
     end_position: int
-    text: str
 
 class TimestampRequest(BaseModel):
     timestamp: float
@@ -235,8 +234,7 @@ async def get_context(request: TimestampRequest):
         return ContextResponse(
             context=context,
             start_position=word_info['start_char'],
-            end_position=word_info['end_char'],
-            text=full_text
+            end_position=word_info['end_char']
         )
         
     except Exception as e:

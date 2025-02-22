@@ -1,10 +1,10 @@
 import { useConversation } from '@11labs/react';
-import { useCallback, useState } from 'react';
-import { Button } from './ui/button';
-import { Card } from './ui/card';
+import { useCallback, useState, useRef } from 'react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { MessageSquare, Mic, MicOff } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
-import { log } from 'console';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import type { DisconnectionDetails } from '@11labs/client';
 
 interface ContextData {
   context: string;
@@ -17,32 +17,58 @@ interface ConversationProps {
   audioFileName?: string;
 }
 
-export function Conversation({ currentTime, audioFileName }: ConversationProps) {
-  const { toast } = useToast();
+export default function Conversation({ currentTime, audioFileName }: ConversationProps) {
   const [isStarting, setIsStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [currentContext, setCurrentContext] = useState<ContextData | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
   
   const conversation = useConversation({
     onConnect: () => {
-      toast({ title: "Connected to agent", description: "You can start speaking now" });
+      console.log('Connected to agent');
       setIsStarting(false);
+      setError(null);
     },
-    onDisconnect: () => {
-      toast({ title: "Disconnected from agent" });
+    onDisconnect: (details: DisconnectionDetails) => {
+      console.log('Disconnection details:', details);
+      
+      let reasonMessage = 'Unknown disconnection reason';
+      
+      if (details.reason === 'error') {
+        reasonMessage = `Error: ${details.message}`;
+        console.error('Connection error context:', details.context);
+      } else if (details.reason === 'agent') {
+        const closeEvent = details.context;
+        reasonMessage = `Agent disconnected (Code: ${closeEvent.code}, ${closeEvent.reason || 'No reason provided'})`;
+      } else if (details.reason === 'user') {
+        reasonMessage = 'User initiated disconnect';
+      }
+      
+      setDisconnectionReason(reasonMessage);
       setCurrentContext(null);
+      setError(null);
+      
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(track => track.stop());
+        mediaStreamRef.current = null;
+      }
     },
-    onMessage: (message) => console.log('Message:', message),
+    onMessage: (message) => {
+      console.log('Message:', message);
+    },
     onError: (error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive"
-      });
+      console.error('Conversation error:', error);
+      setError(error.message);
       setIsStarting(false);
+      // Clean up on error
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(track => track.stop());
+        mediaStreamRef.current = null;
+      }
     },
   });
 
-  const fetchContext = async (): Promise<ContextData | null> => {
+  const fetchContext = useCallback(async (): Promise<ContextData | null> => {
     try {
       const response = await fetch('http://localhost:8000/api/context', {
         method: 'POST',
@@ -59,84 +85,90 @@ export function Conversation({ currentTime, audioFileName }: ConversationProps) 
         throw new Error('Failed to fetch context');
       }
 
-      const data = await response.json();
-      return data;
+      return await response.json();
     } catch (error) {
-      console.error('Error fetching context:', error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch context for current timestamp",
-        variant: "destructive"
-      });
+      setError('Failed to fetch context for current timestamp');
       return null;
     }
-  };
+  }, [currentTime, audioFileName]);
 
   const startConversation = useCallback(async () => {
     try {
       setIsStarting(true);
+      setError(null);
       
-      // 1. Get microphone permission
-      await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Get microphone permission and store the stream
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
       
-      // 2. Fetch context for current timestamp
+      // Fetch context
       const contextData = await fetchContext();
       if (!contextData) {
         setIsStarting(false);
         return;
       }
-
-      console.log('Context:', contextData);
       
       setCurrentContext(contextData);
-      
-      // 3. Start conversation with context
-      const prompt = `You are an AI assistant helping with audio content.
-        Current timestamp: ${currentTime} seconds.
-        File: ${audioFileName}
-        
-        Current context from the transcript:
-        "${contextData.context}"
-        
-        Please use this context to provide relevant answers to the user's questions.`;
 
-      await conversation.startSession({
-        agentId: 'YOUR_AGENT_ID',
-        overrides: {
-          agent: {
-            prompt: { prompt }
-          }
+      const sessionId = await conversation.startSession({
+        agentId: 'Ztv2l2ZSehyU7sZsPhfc',
+        dynamicVariables: {
+          context: contextData.context
         }
       });
+
+      console.log('Session started with ID:', sessionId);
+
+      // Set initial volume
+      await conversation.setVolume({ volume: 0.8 });
     } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to start conversation. Please make sure you have a working microphone.",
-        variant: "destructive"
-      });
+      console.error('Start conversation error:', error);
+      setError('Failed to start conversation. Please check your microphone access.');
       setIsStarting(false);
       setCurrentContext(null);
+      
+      // Clean up on error
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(track => track.stop());
+        mediaStreamRef.current = null;
+      }
     }
-  }, [conversation, currentTime, audioFileName, toast]);
+  }, [conversation, currentTime, audioFileName, fetchContext]);
 
   const stopConversation = useCallback(async () => {
-    await conversation.endSession();
-    setCurrentContext(null);
+    try {
+      await conversation.endSession();
+      setCurrentContext(null);
+      
+      // Clean up media stream
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(track => track.stop());
+        mediaStreamRef.current = null;
+      }
+    } catch (error) {
+      setError('Failed to stop conversation');
+    }
   }, [conversation]);
 
   return (
-    <Card className="p-6 glass-panel">
+    <Card className="p-6">
       <div className="flex flex-col gap-6">
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        
         <div className="flex justify-center gap-4">
           <Button
             onClick={startConversation}
             disabled={conversation.status === 'connected' || isStarting}
-            variant="default"
             className="w-40"
           >
             <Mic className="mr-2 h-4 w-4" />
             {isStarting ? 'Starting...' : 'Start'}
           </Button>
+          
           <Button
             onClick={stopConversation}
             disabled={conversation.status !== 'connected'}
@@ -155,17 +187,11 @@ export function Conversation({ currentTime, audioFileName }: ConversationProps) 
             }`} />
             <span>Status: {conversation.status}</span>
           </div>
+          
           <div className="flex items-center gap-2">
             <MessageSquare className="h-4 w-4" />
             <span>Agent is {conversation.isSpeaking ? 'speaking' : 'listening'}</span>
           </div>
-          
-          {currentContext && (
-            <div className="mt-4 p-4 bg-muted rounded-lg">
-              <p className="text-sm font-medium mb-2">Current Context:</p>
-              <p className="text-sm text-muted-foreground">{currentContext.context}</p>
-            </div>
-          )}
         </div>
       </div>
     </Card>
