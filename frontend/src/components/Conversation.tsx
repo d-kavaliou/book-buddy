@@ -19,12 +19,16 @@ interface ConversationProps {
 
 const ELEVEN_LABS_API_KEY = import.meta.env.VITE_ELEVEN_LABS_API_KEY as string | undefined;
 const ELEVEN_LABS_AGENT_ID = import.meta.env.VITE_ELEVEN_LABS_AGENT_ID as string | undefined;
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL as string | undefined;
 
 if (!ELEVEN_LABS_API_KEY) {
   console.error('Environment variable VITE_ELEVEN_LABS_API_KEY is not defined');
 }
 if (!ELEVEN_LABS_AGENT_ID) {
-  console.error('Environment variable ELEVEN_LABS_AGENT_ID is not defined');
+  console.error('Environment variable VITE_ELEVEN_LABS_AGENT_ID is not defined');
+}
+if (!BACKEND_URL) {
+  console.error('Environment variable VITE_BACKEND_URL is not defined');
 }
 
 export default function Conversation({ currentTime, audioFileName }: ConversationProps) {
@@ -89,7 +93,7 @@ export default function Conversation({ currentTime, audioFileName }: Conversatio
     }
 
     try {
-      const response = await fetch('http://localhost:8000/api/context', {
+      const response = await fetch(`${BACKEND_URL}/api/context`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
