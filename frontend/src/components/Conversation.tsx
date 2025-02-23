@@ -65,7 +65,7 @@ export default function Conversation({
 
   const getAudioTimestamps = async (contextText: string): Promise<TimestampResponse> => {
     try {
-      const response = await fetch('http://localhost:8000/api/timestamps', {
+      const response = await fetch(`${BACKEND_URL}/api/timestamps`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -304,7 +304,8 @@ export default function Conversation({
           context: contextData?.context || 'No context available yet',
           history: conversationHistory || 'No history available yet',
           first_message: nextFirstMessage || "Hi, I'm Eric. How can I help you today?"
-        }
+        },
+        clientTools: clientTools()
       });
 
       setSessionId(newSessionId);
@@ -344,17 +345,6 @@ export default function Conversation({
       setError('Failed to stop conversation');
     }
   }, [conversation, onStopConversation, onPlayerStateChange]);
-
-  const testPlayChunk = async () => {
-    try {
-      const result = await clientTools().play_chunk({ 
-        contextText: "He made several important telephone calls and shouted a bit more" 
-      });
-      console.log('Chunk played successfully:', result);
-    } catch (error) {
-      console.error('Failed to play chunk:', error);
-    }
-  };
 
   return (
     <Card className="p-6">
