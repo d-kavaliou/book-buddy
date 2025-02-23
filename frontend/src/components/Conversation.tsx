@@ -29,6 +29,21 @@ interface ConversationProps {
   onTemporaryTimeChange?: (time: number) => void;
 }
 
+
+const ELEVEN_LABS_API_KEY = import.meta.env.VITE_ELEVEN_LABS_API_KEY as string | undefined;
+const ELEVEN_LABS_AGENT_ID = import.meta.env.VITE_ELEVEN_LABS_AGENT_ID as string | undefined;
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL as string | undefined;
+
+if (!ELEVEN_LABS_API_KEY) {
+  console.error('Environment variable VITE_ELEVEN_LABS_API_KEY is not defined');
+}
+if (!ELEVEN_LABS_AGENT_ID) {
+  console.error('Environment variable VITE_ELEVEN_LABS_AGENT_ID is not defined');
+}
+if (!BACKEND_URL) {
+  console.error('Environment variable VITE_BACKEND_URL is not defined');
+}
+
 export default function Conversation({
   currentTime,
   audioFileName,
@@ -43,6 +58,8 @@ export default function Conversation({
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentContext, setCurrentContext] = useState<ContextData | null>(null);
+  const [firstMessage, setFirstMessage] = useState<string | null>(null);
+  const [history, setHistory] = useState<string | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
@@ -84,6 +101,8 @@ export default function Conversation({
     }
   };
 
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  
   const conversation = useConversation({
     onConnect: () => {
       console.log('Connected to agent');
@@ -107,6 +126,8 @@ export default function Conversation({
       
       setCurrentContext(null);
       setError(null);
+      setHistory(null);
+      setFirstMessage(null);
       
       cleanupMediaStream();
       cleanupAudioPlayer();
@@ -189,7 +210,7 @@ export default function Conversation({
     }
 
     try {
-      const response = await fetch('http://localhost:8000/api/context', {
+      const response = await fetch(`${BACKEND_URL}/api/context`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -211,6 +232,35 @@ export default function Conversation({
     }
   }, [currentTime, audioFileName]);
 
+  const fetchConversationHistory = useCallback(async (sid: string): Promise<string> => {
+    try {
+      console.log('Fetching conversation history for session:', sid);
+      
+      const response = await fetch(`https://api.elevenlabs.io/v1/convai/conversations/${sid}`, {
+        headers: {
+          'xi-api-key': ELEVEN_LABS_API_KEY
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch conversation history');
+      }
+
+      const data = await response.json();
+      console.log('Raw API response:', data);
+      
+      const history = data.transcript
+        .map(turn => `${turn.role === 'agent' ? 'agent' : 'user'}: ${turn.message}`)
+        .join('\n');
+
+      console.log('Conversation history:', history);
+      return history;
+    } catch (error) {
+      console.error('Failed to fetch conversation history:', error);
+      return '';
+    }
+  }, []);
+
   const startConversation = useCallback(async () => {
     try {
       setIsStarting(true);
@@ -226,19 +276,41 @@ export default function Conversation({
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
       
-      // Fetch context
       const contextData = await fetchContext();
       setCurrentContext(contextData);
 
-      const sessionId = await conversation.startSession({
-        agentId: 'Ztv2l2ZSehyU7sZsPhfc',
+      console.log('sessionId to fetch history:', sessionId);
+
+      let conversationHistory = '';
+      let nextFirstMessage = null;
+      
+      if (sessionId) {
+        conversationHistory = await fetchConversationHistory(sessionId);
+        
+        // Random selection of greeting for returning sessions
+        const greetings = ['hey again', 'hey', 'lets continue'];
+        nextFirstMessage = greetings[Math.floor(Math.random() * greetings.length)];
+        
+        console.log('Previous session ID:', sessionId);
+        console.log('Conversation history:', conversationHistory || 'No history found');
+      }
+
+      setHistory(conversationHistory);
+      setFirstMessage(nextFirstMessage);
+
+      const newSessionId = await conversation.startSession({
+        agentId: ELEVEN_LABS_AGENT_ID,
         dynamicVariables: {
-          context: contextData?.context || 'No context available yet'
-        },
-        clientTools: clientTools()
+          context: contextData?.context || 'No context available yet',
+          history: conversationHistory || 'No history available yet',
+          first_message: nextFirstMessage || "Hi, I'm Eric. How can I help you today?"
+        }
       });
 
-      console.log('Session started with ID:', sessionId);
+      setSessionId(newSessionId);
+      console.log('New session started with ID:', newSessionId);
+
+      // Set initial volume
       await conversation.setVolume({ volume: 0.8 });
       
     } catch (error) {
@@ -252,7 +324,7 @@ export default function Conversation({
         onPlayerStateChange(false);
       }
     }
-  }, [conversation, fetchContext, onStartConversation, onPlayerStateChange, clientTools]);
+  }, [conversation, currentTime, audioFileName, fetchContext, onStartConversation, onPlayerStateChange, clientTools, fetchConversationHistory]);
 
   const stopConversation = useCallback(async () => {
     try {

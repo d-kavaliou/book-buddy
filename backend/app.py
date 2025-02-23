@@ -79,6 +79,22 @@ class TimestampResponse(BaseModel):
     start_time: float
     end_time: float
 
+class NoteRequest(BaseModel):
+    book_name: str
+    note: str
+
+class Note(BaseModel):
+    date: str
+    book_name: str
+    note: str
+
+class NoteResponse(BaseModel):
+    notes: list[Note]
+
+class NotePostResponse(BaseModel):
+    message: str
+    
+
 def find_text_position(full_text: str, search_text: str) -> tuple[int, int]:
     """
     Find the best matching position of search_text within full_text.
@@ -262,6 +278,38 @@ async def get_timestamps_for_text(request: TimestampsByTextRequest):
         raise
     except Exception as e:
         error_msg = f"Failed to get timestamps: {str(e)}"
+        logger.error(f"{error_msg}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=error_msg)
+
+@app.post("/api/add_note")
+async def add_note(request: NoteRequest):
+    logger.info(f"Adding note: {request.note}")
+    try:
+        note = {
+            'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'book_name': request.book_name,
+            'note': request.note
+        }
+
+        with open('notes/notes.json', 'a') as f:
+            json.dump(note, f)
+            f.write('\n')
+    except Exception as e:
+        error_msg = f"Failed to add note: {str(e)}"
+        logger.error(f"{error_msg}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=error_msg)
+    
+    return NotePostResponse(message="Note added successfully to notes.json")
+
+@app.get("/api/get_notes", response_model=NoteResponse)
+async def get_notes():
+    logger.info("Getting notes")
+    try:
+        with open('notes/notes.json', 'r') as f:
+            notes = [json.loads(line) for line in f]
+        return NoteResponse(notes=notes)
+    except Exception as e:
+        error_msg = f"Failed to get notes: {str(e)}"
         logger.error(f"{error_msg}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=error_msg)
 

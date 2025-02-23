@@ -1,4 +1,6 @@
+
 import { useState, useCallback, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { FileUpload } from '@/components/FileUpload';
 import { AudioReader } from '@/components/Reader';
 import Conversation from '@/components/Conversation';
@@ -90,7 +92,9 @@ export default function Index() {
 
   return (
     <div className="container mx-auto py-8 min-h-screen">
-      <h1 className="text-4xl font-bold text-center mb-8">Book Buddy</h1>
+      <div className="flex justify-center items-center mb-8">
+        <h1 className="text-4xl font-bold">Book Buddy</h1>
+      </div>
       
       {error && (
         <Alert variant="destructive" className="mb-6">
@@ -131,7 +135,7 @@ export default function Index() {
           )}
         </Card>
 
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-1 space-y-4">
           <Conversation 
             currentTime={currentTime}
             audioFileName={audioFile?.name}
@@ -141,6 +145,12 @@ export default function Index() {
             onBeforeChunkPlay={handleBeforeChunkPlay}
             onAfterChunkPlay={handleAfterChunkPlay}
           />
+          <Link 
+            to="/notes" 
+            className="w-full block text-center px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+          >
+            View Notes
+          </Link>
         </div>
       </div>
     </div>
