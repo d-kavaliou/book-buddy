@@ -254,8 +254,11 @@ class Note(BaseModel):
 class NoteResponse(BaseModel):
     notes: list[Note]
 
+class NotePostResponse(BaseModel):
+    message: str
 
-@app.post("/api/add_note", response_model=NoteResponse)
+
+@app.post("/api/add_note")
 async def add_note(request: NoteRequest):
     logger.info(f"Adding note: {request.note}")
     try:
@@ -273,7 +276,7 @@ async def add_note(request: NoteRequest):
         logger.error(f"{error_msg}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=error_msg)
     
-    return NoteResponse(message="Note added successfully to notes.json")
+    return NotePostResponse(message="Note added successfully to notes.json")
 
 @app.get("/api/get_notes", response_model=NoteResponse)
 async def get_notes():
