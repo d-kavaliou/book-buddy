@@ -17,11 +17,19 @@ interface ConversationProps {
   audioFileName?: string;
 }
 
+const ELEVEN_LABS_API_KEY = import.meta.env.VITE_ELEVEN_LABS_API_KEY as string | undefined;
+
+if (!ELEVEN_LABS_API_KEY) {
+  console.error('Environment variable VITE_ELEVEN_LABS_API_KEY is not defined');
+  // You might want to handle this error differently depending on your needs
+}
+
 export default function Conversation({ currentTime, audioFileName }: ConversationProps) {
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentContext, setCurrentContext] = useState<ContextData | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   
   const conversation = useConversation({
     onConnect: () => {
@@ -68,7 +76,7 @@ export default function Conversation({ currentTime, audioFileName }: Conversatio
   });
 
   const fetchContext = useCallback(async (): Promise<ContextData | null> => {
-    // Return null if currentTime is less than 1
+
     if (currentTime < 1) {
       return null;
     }
@@ -96,6 +104,35 @@ export default function Conversation({ currentTime, audioFileName }: Conversatio
     }
   }, [currentTime, audioFileName]);
 
+  const fetchConversationHistory = useCallback(async (sid: string): Promise<string> => {
+    try {
+      console.log('Fetching conversation history for session:', sid);
+      
+      const response = await fetch(`https://api.elevenlabs.io/v1/convai/conversations/${sid}`, {
+        headers: {
+          'xi-api-key': ELEVEN_LABS_API_KEY
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch conversation history');
+      }
+
+      const data = await response.json();
+      console.log('Raw API response:', data);
+      
+      const history = data.transcript
+        .map(turn => `${turn.role === 'agent' ? 'agent' : 'user'}: ${turn.message}`)
+        .join('\n');
+
+      console.log('Conversation history:', history);
+      return history;
+    } catch (error) {
+      console.error('Failed to fetch conversation history:', error);
+      return '';
+    }
+  }, []);
+
   const startConversation = useCallback(async () => {
     try {
       setIsStarting(true);
@@ -105,18 +142,29 @@ export default function Conversation({ currentTime, audioFileName }: Conversatio
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
       
-      // Fetch context
       const contextData = await fetchContext();
       setCurrentContext(contextData);
 
-      const sessionId = await conversation.startSession({
+      console.log('sessionId to fetch history:', sessionId);
+
+      let history = '';
+      if (sessionId) {
+        history = await fetchConversationHistory(sessionId);
+        
+        console.log('Previous session ID:', sessionId);
+        console.log('Conversation history:', history || 'No history found');
+      }
+
+      const newSessionId = await conversation.startSession({
         agentId: 'Ztv2l2ZSehyU7sZsPhfc',
         dynamicVariables: {
-          context: contextData?.context || 'No context available yet'
+          context: contextData?.context || 'No context available yet',
+          history: history
         }
       });
 
-      console.log('Session started with ID:', sessionId);
+      setSessionId(newSessionId);
+      console.log('New session started with ID:', newSessionId);
 
       // Set initial volume
       await conversation.setVolume({ volume: 0.8 });
@@ -132,7 +180,7 @@ export default function Conversation({ currentTime, audioFileName }: Conversatio
         mediaStreamRef.current = null;
       }
     }
-  }, [conversation, currentTime, audioFileName, fetchContext]);
+  }, [conversation, currentTime, audioFileName, fetchContext, sessionId, fetchConversationHistory]);
 
   const stopConversation = useCallback(async () => {
     try {
