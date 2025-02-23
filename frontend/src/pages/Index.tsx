@@ -6,6 +6,7 @@ import { AudioReader } from '@/components/Reader';
 import Conversation from '@/components/Conversation';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card } from '@/components/ui/card';
+import logo3 from '@/assets/logo3.svg';
 
 interface AudioProcessingError {
   title: string;
@@ -94,7 +95,8 @@ export default function Index() {
 
   return (
     <div className="container mx-auto py-8 min-h-screen">
-      <div className="flex justify-center items-center mb-8">
+      <div className="flex justify-center items-center gap-3 mb-8">
+        <img src={logo3} alt="Book Buddy Logo" className="h-10 w-10" />
         <h1 className="text-4xl font-bold">Book Buddy</h1>
       </div>
       
@@ -111,7 +113,6 @@ export default function Index() {
           <FileUpload 
             onFileAccepted={handleFileAccepted}
             setAudioFile={handleProcessedAudio}
-            apiEndpoint={`${BACKEND_URL}`}
           />
           
           {audioFile && !isProcessing && (

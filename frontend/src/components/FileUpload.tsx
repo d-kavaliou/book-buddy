@@ -6,10 +6,15 @@ import { cn } from '@/lib/utils';
 import { useToast } from './ui/use-toast';
 import { Progress } from './ui/progress';
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL as string | undefined;
+
+if (!BACKEND_URL) {
+  console.error('Environment variable VITE_BACKEND_URL is not defined');
+}
+
 interface FileUploadProps {
   onFileAccepted: (file: File) => void;
   setAudioFile: (file: string | null) => void;
-  apiEndpoint?: string;
 }
 
 interface UploadResponse {
@@ -21,7 +26,6 @@ interface UploadResponse {
 export const FileUpload = ({ 
   onFileAccepted, 
   setAudioFile,
-  apiEndpoint
 }: FileUploadProps) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -31,7 +35,7 @@ export const FileUpload = ({
 
   const checkProcessingStatus = async (filename: string) => {
     try {
-      const response = await fetch(`${apiEndpoint}/status/${filename}`);
+      const response = await fetch(`${BACKEND_URL}/status/${filename}`);
       const data = await response.json();
       
       if (data.status === 'completed') {
@@ -82,7 +86,7 @@ export const FileUpload = ({
       };
 
       const response = await new Promise<UploadResponse>((resolve, reject) => {
-        xhr.open('POST', `${apiEndpoint}/upload`, true);
+        xhr.open('POST', `${BACKEND_URL}/upload`, true);
         
         xhr.onload = () => {
           if (xhr.status >= 200 && xhr.status < 300) {

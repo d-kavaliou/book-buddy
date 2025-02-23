@@ -275,6 +275,7 @@ export default function Conversation({
       mediaStreamRef.current = stream;
 
       const validSessionId = typeof existingSessionId === 'string' ? existingSessionId : undefined;
+      console.log('Valid session ID:', validSessionId);
       
       const contextData = await fetchContext();
       setCurrentContext(contextData);
@@ -356,7 +357,13 @@ export default function Conversation({
         
         <div className="flex justify-center">
           <Button
-            onClick={conversation.status === 'connected' ? stopConversation : startConversation}
+            onClick={(e) => {
+              if (conversation.status === 'connected') {
+                stopConversation();
+              } else {
+                startConversation(sessionId || undefined);
+              }
+            }}
             disabled={isStarting}
             variant={conversation.status === 'connected' ? "destructive" : "default"}
             className="w-40"
