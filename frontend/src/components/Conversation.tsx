@@ -44,7 +44,6 @@ export default function Conversation({ currentTime, audioFileName }: Conversatio
         reasonMessage = 'User initiated disconnect';
       }
       
-      setDisconnectionReason(reasonMessage);
       setCurrentContext(null);
       setError(null);
       
@@ -159,24 +158,24 @@ export default function Conversation({ currentTime, audioFileName }: Conversatio
           </Alert>
         )}
         
-        <div className="flex justify-center gap-4">
+        <div className="flex justify-center">
           <Button
-            onClick={startConversation}
-            disabled={conversation.status === 'connected' || isStarting}
+            onClick={conversation.status === 'connected' ? stopConversation : startConversation}
+            disabled={isStarting}
+            variant={conversation.status === 'connected' ? "destructive" : "default"}
             className="w-40"
           >
-            <Mic className="mr-2 h-4 w-4" />
-            {isStarting ? 'Starting...' : 'Start'}
-          </Button>
-          
-          <Button
-            onClick={stopConversation}
-            disabled={conversation.status !== 'connected'}
-            variant="destructive"
-            className="w-40"
-          >
-            <MicOff className="mr-2 h-4 w-4" />
-            Stop
+            {conversation.status === 'connected' ? (
+              <>
+                <MicOff className="mr-2 h-4 w-4" />
+                Disconnect
+              </>
+            ) : (
+              <>
+                <Mic className="mr-2 h-4 w-4" />
+                {isStarting ? 'Connecting...' : 'Connect'}
+              </>
+            )}
           </Button>
         </div>
 

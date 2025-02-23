@@ -1,5 +1,12 @@
 # Welcome to your Lovable project
 
+
+```bash
+npm install
+npm run dev
+```
+
+
 ## Project info
 
 **URL**: https://lovable.dev/projects/aac4aa34-2835-4ab6-9650-4f2cd8f61daf
