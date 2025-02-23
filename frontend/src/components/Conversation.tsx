@@ -127,15 +127,7 @@ export default function Conversation({
           await startConversation(currentSessionId);
         }
       } else {
-        // Normal cleanup
-        setCurrentContext(null);
-        setError(null);
-        setHistory(null);
-        setFirstMessage(null);
-        setSessionId(null);
-        
-        cleanupMediaStream();
-        cleanupAudioPlayer();
+        onStopConversation();
       }
     },
     onMessage: (message) => {
