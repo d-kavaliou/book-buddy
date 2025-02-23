@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Play, Pause, SkipBack, SkipForward, MessageSquare } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward } from 'lucide-react';
 import { Button } from './ui/button';
 import { Slider } from './ui/slider';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
@@ -8,14 +8,27 @@ interface AudioReaderProps {
   audioFile: File;
   onContextUpdate?: (context: string) => void;
   onTimeUpdate?: (time: number) => void;
+  onPlayStateChange?: (isPlaying: boolean) => void;
+  isPlaying: boolean;
+  currentTime: number;
+  onSetTime: (time: number) => void;
+  disabled?: boolean; // New prop
 }
 
-export const AudioReader = ({ audioFile, onContextUpdate, onTimeUpdate }: AudioReaderProps) => {
-  const [isPlaying, setIsPlaying] = useState(false);
+export const AudioReader = ({
+  audioFile,
+  onContextUpdate,
+  onTimeUpdate,
+  onPlayStateChange,
+  isPlaying,
+  currentTime,
+  onSetTime,
+  disabled = false
+}: AudioReaderProps) => {
   const [duration, setDuration] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrl = useRef<string | null>(null);
+  const skipUpdate = useRef(false);
 
   useEffect(() => {
     audioUrl.current = URL.createObjectURL(audioFile);
@@ -32,14 +45,31 @@ export const AudioReader = ({ audioFile, onContextUpdate, onTimeUpdate }: AudioR
   }, [audioFile]);
 
   useEffect(() => {
+    if (audioRef.current && !skipUpdate.current) {
+      audioRef.current.currentTime = currentTime;
+    }
+    skipUpdate.current = false;
+  }, [currentTime]);
+
+  useEffect(() => {
     if (audioRef.current) {
-      if (isPlaying) {
+      if (disabled) {
+        // Ensure audio is paused when disabled
+        audioRef.current.pause();
+        if (onPlayStateChange) {
+          onPlayStateChange(false);
+        }
+      } else if (isPlaying) {
         audioRef.current.play();
       } else {
         audioRef.current.pause();
       }
     }
-  }, [isPlaying]);
+  }, [isPlaying, disabled, onPlayStateChange]);
+
+  const getButtonClass = () => {
+    return `h-10 w-10 ${disabled ? 'cursor-not-allowed opacity-50' : ''}`;
+  };
 
   const handleLoadedMetadata = () => {
     if (audioRef.current) {
@@ -48,38 +78,41 @@ export const AudioReader = ({ audioFile, onContextUpdate, onTimeUpdate }: AudioR
   };
 
   const handleTimeUpdate = () => {
-    if (audioRef.current) {
-      const currentTime = audioRef.current.currentTime;
-      setCurrentTime(currentTime);
-      
-      // Call both update handlers
+    if (audioRef.current && !disabled) {
+      const time = audioRef.current.currentTime;
+      skipUpdate.current = true;
       if (onTimeUpdate) {
-        onTimeUpdate(currentTime);
+        onTimeUpdate(time);
       }
       if (onContextUpdate) {
-        const context = `Currently at ${formatTime(currentTime)} of ${formatTime(audioRef.current.duration)} in audio file: ${audioFile.name}`;
+        const context = `Currently at ${formatTime(time)} of ${formatTime(audioRef.current.duration)}`;
         onContextUpdate(context);
       }
     }
   };
 
   const handleSliderChange = (value: number[]) => {
-    const time = value[0];
-    setCurrentTime(time);
-    if (audioRef.current) {
-      audioRef.current.currentTime = time;
+    if (!disabled) {
+      const time = value[0];
+      onSetTime(time);
     }
   };
 
   const skipForward = () => {
-    if (audioRef.current) {
-      audioRef.current.currentTime = Math.min(audioRef.current.currentTime + 10, duration);
+    if (audioRef.current && !disabled) {
+      onSetTime(Math.min(audioRef.current.currentTime + 10, duration));
     }
   };
 
   const skipBackward = () => {
-    if (audioRef.current) {
-      audioRef.current.currentTime = Math.max(audioRef.current.currentTime - 10, 0);
+    if (audioRef.current && !disabled) {
+      onSetTime(Math.max(audioRef.current.currentTime - 10, 0));
+    }
+  };
+
+  const handlePlayPause = () => {
+    if (!disabled && onPlayStateChange) {
+      onPlayStateChange(!isPlaying);
     }
   };
 
@@ -89,21 +122,11 @@ export const AudioReader = ({ audioFile, onContextUpdate, onTimeUpdate }: AudioR
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  const handleAskQuestion = () => {
-    if (onContextUpdate && audioRef.current) {
-      const context = `At timestamp ${formatTime(currentTime)} in audio file: ${audioFile.name}`;
-      onContextUpdate(context);
-    }
-  };
-
-  // Format file name for display by removing extension
-  const displayName = audioFile.name.replace(/\.[^/.]+$/, '');
-
   return (
-    <Card className="glass-panel">
+    <Card className={`glass-panel ${disabled ? 'opacity-50' : ''}`}>
       <CardHeader className="pb-2">
         <CardTitle className="truncate text-lg font-semibold">
-          {displayName}
+          {audioFile.name.replace(/\.[^/.]+$/, '')}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -113,8 +136,9 @@ export const AudioReader = ({ audioFile, onContextUpdate, onTimeUpdate }: AudioR
               <Button
                 variant="outline"
                 size="icon"
-                onClick={() => setIsPlaying(!isPlaying)}
-                className="h-10 w-10"
+                onClick={handlePlayPause}
+                className={getButtonClass()}
+                disabled={disabled}
               >
                 {isPlaying ? (
                   <Pause className="h-4 w-4" />
@@ -126,7 +150,8 @@ export const AudioReader = ({ audioFile, onContextUpdate, onTimeUpdate }: AudioR
                 variant="outline"
                 size="icon"
                 onClick={skipBackward}
-                className="h-10 w-10"
+                className={getButtonClass()}
+                disabled={disabled}
               >
                 <SkipBack className="h-4 w-4" />
               </Button>
@@ -134,7 +159,8 @@ export const AudioReader = ({ audioFile, onContextUpdate, onTimeUpdate }: AudioR
                 variant="outline"
                 size="icon"
                 onClick={skipForward}
-                className="h-10 w-10"
+                className={getButtonClass()}
+                disabled={disabled}
               >
                 <SkipForward className="h-4 w-4" />
               </Button>
@@ -144,32 +170,23 @@ export const AudioReader = ({ audioFile, onContextUpdate, onTimeUpdate }: AudioR
               <div className="text-sm text-muted-foreground">
                 {formatTime(currentTime)} / {formatTime(duration)}
               </div>
-              {onContextUpdate && (
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={handleAskQuestion}
-                  className="h-10 w-10"
-                >
-                  <MessageSquare className="h-4 w-4" />
-                </Button>
-              )}
             </div>
           </div>
 
           <Slider
-            className="w-full"
+            className={`w-full ${disabled ? 'cursor-not-allowed' : ''}`}
             value={[currentTime]}
             max={duration}
             step={0.1}
             onValueChange={handleSliderChange}
+            disabled={disabled}
           />
 
           <audio
             ref={audioRef}
             onLoadedMetadata={handleLoadedMetadata}
             onTimeUpdate={handleTimeUpdate}
-            onEnded={() => setIsPlaying(false)}
+            onEnded={() => !disabled && onPlayStateChange?.(false)}
           />
         </div>
       </CardContent>

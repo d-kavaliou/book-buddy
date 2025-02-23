@@ -12,17 +12,78 @@ interface ContextData {
   end_position: number;
 }
 
+interface TimestampResponse {
+  start_time: number;
+  end_time: number;
+}
+
 interface ConversationProps {
   currentTime: number;
   audioFileName?: string;
+  audioUrl?: string;
+  onStartConversation?: () => void;
+  onStopConversation?: () => void;
+  onBeforeChunkPlay?: (time: number) => void;
+  onAfterChunkPlay?: () => void;
+  onPlayerStateChange?: (disabled: boolean) => void;
+  onTemporaryTimeChange?: (time: number) => void;
 }
 
-export default function Conversation({ currentTime, audioFileName }: ConversationProps) {
+export default function Conversation({
+  currentTime,
+  audioFileName,
+  audioUrl,
+  onStartConversation,
+  onBeforeChunkPlay,
+  onAfterChunkPlay,
+  onStopConversation,
+  onPlayerStateChange,
+  onTemporaryTimeChange
+}: ConversationProps) {
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentContext, setCurrentContext] = useState<ContextData | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
-  
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+
+  const getAudioTimestamps = async (contextText: string): Promise<TimestampResponse> => {
+    try {
+      const response = await fetch('http://localhost:8000/api/timestamps', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          context_text: contextText,
+          file_name: audioFileName
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch timestamps');
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching timestamps:', error);
+      throw error;
+    }
+  };
+
+  const cleanupAudioPlayer = () => {
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+      audioPlayerRef.current = null;
+    }
+  };
+
+  const cleanupMediaStream = () => {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(track => track.stop());
+      mediaStreamRef.current = null;
+    }
+  };
+
   const conversation = useConversation({
     onConnect: () => {
       console.log('Connected to agent');
@@ -47,10 +108,8 @@ export default function Conversation({ currentTime, audioFileName }: Conversatio
       setCurrentContext(null);
       setError(null);
       
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach(track => track.stop());
-        mediaStreamRef.current = null;
-      }
+      cleanupMediaStream();
+      cleanupAudioPlayer();
     },
     onMessage: (message) => {
       console.log('Message:', message);
@@ -59,16 +118,72 @@ export default function Conversation({ currentTime, audioFileName }: Conversatio
       console.error('Conversation error:', error);
       setError(error.message);
       setIsStarting(false);
-      // Clean up on error
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach(track => track.stop());
-        mediaStreamRef.current = null;
-      }
+      
+      cleanupMediaStream();
+      cleanupAudioPlayer();
     },
   });
 
+  const clientTools = useCallback(() => ({
+    play_chunk: async ({ contextText }) => {
+      try {
+        if (!audioUrl) {
+          throw new Error('No ElevenLabs audio stream URL available');
+        }
+  
+        // Wait for ElevenLabs stream to initialize
+        console.log('Waiting for ElevenLabs stream to initialize...');
+        await new Promise(resolve => setTimeout(resolve, 8000));
+        console.log('ElevenLabs stream should be ready');
+  
+        // Get timestamps from API for this chunk of text
+        const { start_time, end_time } = await getAudioTimestamps(contextText);
+        console.log('Playing chunk:', contextText);
+        console.log('Start time:', start_time);
+        console.log('End time:', end_time);
+  
+        // Create new audio player for ElevenLabs stream
+        const elevenLabsAudio = new Audio(audioUrl);
+        elevenLabsAudio.currentTime = start_time;
+        
+        return new Promise((resolve, reject) => {
+          // Monitor playback time to ensure exact chunk playback
+          const checkTime = () => {
+            if (elevenLabsAudio.currentTime >= end_time) {
+              elevenLabsAudio.pause();
+              resolve({
+                status: 'success',
+                played_chunk: {
+                  text: contextText,
+                  start: start_time,
+                  end: end_time
+                }
+              });
+            } else {
+              requestAnimationFrame(checkTime);
+            }
+          };
+  
+          elevenLabsAudio.play()
+            .then(() => requestAnimationFrame(checkTime))
+            .catch(error => {
+              console.error('ElevenLabs stream playback error:', error);
+              reject(error);
+            });
+  
+          elevenLabsAudio.onerror = (error) => {
+            console.error('ElevenLabs audio stream error:', error);
+            reject(error);
+          };
+        });
+      } catch (error) {
+        console.error('Error in ElevenLabs chunk playback:', error);
+        throw error;
+      }
+    }
+  }), [audioUrl]);
+
   const fetchContext = useCallback(async (): Promise<ContextData | null> => {
-    // Return null if currentTime is less than 1
     if (currentTime < 1) {
       return null;
     }
@@ -101,7 +216,13 @@ export default function Conversation({ currentTime, audioFileName }: Conversatio
       setIsStarting(true);
       setError(null);
       
-      // Get microphone permission and store the stream
+      if (onStartConversation) {
+        onStartConversation();
+      }
+      if (onPlayerStateChange) {
+        onPlayerStateChange(true);
+      }
+      
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
       
@@ -113,41 +234,55 @@ export default function Conversation({ currentTime, audioFileName }: Conversatio
         agentId: 'Ztv2l2ZSehyU7sZsPhfc',
         dynamicVariables: {
           context: contextData?.context || 'No context available yet'
-        }
+        },
+        clientTools: clientTools()
       });
 
       console.log('Session started with ID:', sessionId);
-
-      // Set initial volume
       await conversation.setVolume({ volume: 0.8 });
+      
     } catch (error) {
       console.error('Start conversation error:', error);
       setError('Failed to start conversation. Please check your microphone access.');
       setIsStarting(false);
       setCurrentContext(null);
-      
-      // Clean up on error
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach(track => track.stop());
-        mediaStreamRef.current = null;
+      cleanupMediaStream();
+
+      if (onPlayerStateChange) {
+        onPlayerStateChange(false);
       }
     }
-  }, [conversation, currentTime, audioFileName, fetchContext]);
+  }, [conversation, fetchContext, onStartConversation, onPlayerStateChange, clientTools]);
 
   const stopConversation = useCallback(async () => {
     try {
       await conversation.endSession();
       setCurrentContext(null);
-      
-      // Clean up media stream
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach(track => track.stop());
-        mediaStreamRef.current = null;
+      cleanupMediaStream();
+      cleanupAudioPlayer();
+
+      // Re-enable player and notify parent to resume playing
+      if (onPlayerStateChange) {
+        onPlayerStateChange(false);
+      }
+      if (onStopConversation) {
+        onStopConversation();
       }
     } catch (error) {
       setError('Failed to stop conversation');
     }
-  }, [conversation]);
+  }, [conversation, onStopConversation, onPlayerStateChange]);
+
+  const testPlayChunk = async () => {
+    try {
+      const result = await clientTools().play_chunk({ 
+        contextText: "He made several important telephone calls and shouted a bit more" 
+      });
+      console.log('Chunk played successfully:', result);
+    } catch (error) {
+      console.error('Failed to play chunk:', error);
+    }
+  };
 
   return (
     <Card className="p-6">

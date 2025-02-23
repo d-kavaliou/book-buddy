@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { FileUpload } from '@/components/FileUpload';
 import { AudioReader } from '@/components/Reader';
 import Conversation from '@/components/Conversation';
@@ -15,6 +15,8 @@ export default function Index() {
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<AudioProcessingError | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const savedPositionRef = useRef<number>(0);
 
   const handleFileAccepted = async (file: File) => {
     try {
@@ -65,6 +67,27 @@ export default function Index() {
     setCurrentTime(time);
   };
 
+  const handlePlayStateChange = useCallback((playing: boolean) => {
+    setIsPlaying(playing);
+  }, []);
+
+  const handleStartConversation = useCallback(() => {
+    setIsPlaying(false);
+  }, []);
+
+  const handleStopConversation = useCallback(() => {
+    // Resume playing when conversation stops
+    setIsPlaying(true);
+  }, []);
+
+  const handleBeforeChunkPlay = useCallback((time: number) => {
+    savedPositionRef.current = time;
+  }, []);
+
+  const handleAfterChunkPlay = useCallback(() => {
+    setCurrentTime(savedPositionRef.current);
+  }, []);
+
   return (
     <div className="container mx-auto py-8 min-h-screen">
       <h1 className="text-4xl font-bold text-center mb-8">Book Buddy</h1>
@@ -90,6 +113,10 @@ export default function Index() {
               <AudioReader 
                 audioFile={audioFile}
                 onTimeUpdate={handleTimeUpdate}
+                onPlayStateChange={handlePlayStateChange}
+                isPlaying={isPlaying}
+                currentTime={currentTime}
+                onSetTime={setCurrentTime}
               />
             </div>
           )}
@@ -108,6 +135,11 @@ export default function Index() {
           <Conversation 
             currentTime={currentTime}
             audioFileName={audioFile?.name}
+            audioUrl={audioFile ? URL.createObjectURL(audioFile) : undefined}
+            onStartConversation={handleStartConversation}
+            onStopConversation={handleStopConversation}
+            onBeforeChunkPlay={handleBeforeChunkPlay}
+            onAfterChunkPlay={handleAfterChunkPlay}
           />
         </div>
       </div>

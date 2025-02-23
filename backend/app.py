@@ -10,6 +10,9 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel
 from src.audio_transcriber import AudioTranscriber
+from difflib import SequenceMatcher
+
+from src.transcription_data import TranscriptionData
 
 # Configure logging
 logging.basicConfig(
@@ -56,10 +59,8 @@ class UploadResponse(BaseModel):
     filename: str
     file_type: str
 
-
 class StatusResponse(BaseModel):
     status: str
-
 
 class ContextResponse(BaseModel):
     context: str
@@ -70,6 +71,35 @@ class TimestampRequest(BaseModel):
     timestamp: float
     fileName: str
 
+class TimestampsByTextRequest(BaseModel):
+    context_text: str
+    file_name: str
+
+class TimestampResponse(BaseModel):
+    start_time: float
+    end_time: float
+
+def find_text_position(full_text: str, search_text: str) -> tuple[int, int]:
+    """
+    Find the best matching position of search_text within full_text.
+    Returns tuple of (start_char, end_char) positions.
+    """
+    # Clean and normalize texts for comparison
+    clean_full = full_text.strip().lower()
+    clean_search = search_text.strip().lower()
+    
+    # Find best matching substring
+    matcher = SequenceMatcher(None, clean_full, clean_search)
+    match = matcher.find_longest_match(0, len(clean_full), 0, len(clean_search))
+    
+    if match.size < len(clean_search) * 0.8:  # 80% match threshold
+        raise ValueError("Could not find a close enough match for the provided text")
+    
+    # Get the actual positions from the original text
+    start_char = match.a
+    end_char = start_char + match.size
+    
+    return start_char, end_char
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -97,10 +127,7 @@ async def log_requests(request: Request, call_next):
             logger.error(f"Request failed to complete: {request.method} {request.url} - Time: {process_time}s")
 
 @app.post("/upload", response_model=UploadResponse)
-async def upload_file(
-    file: UploadFile = File(...),
-    file_type: Optional[str] = Form("unknown")
-):
+async def upload_file(file: UploadFile = File(...), file_type: Optional[str] = Form("unknown")):
     logger.info(f"Processing upload request for file: {file.filename}")
 
     if not file:
@@ -112,14 +139,12 @@ async def upload_file(
 
     if os.path.exists(filepath):
         logger.warning(f"File already exists: {filepath}")
-
         return UploadResponse(
             message="File already exists",
             filename=filename,
             file_type=file_type
         )
 
-    # Save uploaded file
     try:
         contents = await file.read()
         with open(filepath, "wb") as f:
@@ -133,15 +158,11 @@ async def upload_file(
     # Process the file
     try:
         logger.info(f"Starting transcription for file: {filename}")
-        text, timestamp_map = transcriber.transcribe(filepath)
+        context_data = transcriber.transcribe(filepath)
         logger.info(f"Transcription completed for file: {filename}")
 
-        # Save transcription results
-        with open(filepath + '.txt', 'w') as f:
-            f.write(text)
-        with open(filepath + '.json', 'w') as f:
-            json.dump(timestamp_map, f)
-        logger.info(f"Transcription results saved for file: {filename}")
+        context_data.save(filepath)
+        logger.info(f"Transcription results saved")
 
     except Exception as e:
         error_msg = f"Transcription failed: {str(e)}"
@@ -166,7 +187,6 @@ async def list_files():
         logger.error(f"Failed to list files: {error_msg}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=error_msg)
 
-
 @app.get("/uploads/{filename}")
 async def get_file(filename: str):
     logger.info(f"Processing request to get file: {filename}")
@@ -176,12 +196,10 @@ async def get_file(filename: str):
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(filepath)
 
-
 @app.get("/status/{filename}", response_model=StatusResponse)
 async def get_processing_status(filename: str):
     logger.info(f"Checking processing status for file: {filename}")
     
-    # Check if the processing is complete
     txt_path = os.path.join(UPLOAD_FOLDER, filename + '.txt')
     file_path = os.path.join(UPLOAD_FOLDER, filename)
     
@@ -189,7 +207,6 @@ async def get_processing_status(filename: str):
         logger.debug(f"Processing completed for file: {filename}")
         return StatusResponse(status="completed")
     
-    # Check if the file exists but processing hasn't completed
     if os.path.exists(file_path):
         logger.debug(f"Processing in progress for file: {filename}")
         return StatusResponse(status="processing")
@@ -197,44 +214,20 @@ async def get_processing_status(filename: str):
     logger.warning(f"File not found: {filename}")
     raise HTTPException(status_code=404, detail="File not found")
 
-
 @app.post("/api/context", response_model=ContextResponse)
 async def get_context(request: TimestampRequest):
     logger.info(f"Getting context for timestamp {request.timestamp} in file {request.fileName}")
     
     try:
-        # Get paths for timestamp map and transcription text
-        json_path = os.path.join(UPLOAD_FOLDER, f"{request.fileName}.json")
-        text_path = os.path.join(UPLOAD_FOLDER, f"{request.fileName}.txt")
-        
-        # Check if files exist
-        if not os.path.exists(json_path) or not os.path.exists(text_path):
-            logger.warning(f"Transcription files not found for {request.fileName}")
-            raise HTTPException(
-                status_code=404, 
-                detail="Transcription not found for this file"
-            )
-            
-        # Load timestamp map and full text
-        with open(json_path, 'r') as f:
-            timestamp_map = json.load(f)
+        file_path = os.path.join(UPLOAD_FOLDER, request.fileName)
+        context_data = TranscriptionData.load(file_path)
 
-        logger.debug(f"Loaded timestamp map for {timestamp_map}")
-        
-        with open(text_path, 'r') as f:
-            full_text = f.read()
+        start_char, end_char, context = context_data.get_text_at_second(int(request.timestamp))
 
-        current_timestamp = str(int(request.timestamp))
-        word_info = timestamp_map[current_timestamp]
-        
-        context = full_text[:word_info['start_char']]
-
-        logger.info(f"Context found for timestamp {word_info}")
-        
         return ContextResponse(
             context=context,
-            start_position=word_info['start_char'],
-            end_position=word_info['end_char']
+            start_position=start_char,
+            end_position=end_char
         )
         
     except Exception as e:
@@ -242,6 +235,35 @@ async def get_context(request: TimestampRequest):
         logger.error(f"{error_msg}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=error_msg)
 
+@app.post("/api/timestamps", response_model=TimestampResponse)
+async def get_timestamps_for_text(request: TimestampsByTextRequest):
+    logger.info(f"Getting timestamps for text segment in file {request.file_name}")
+    
+    try:
+        file_path = os.path.join(UPLOAD_FOLDER, request.file_name)
+        
+        # Check if files exist
+        if not os.path.exists(file_path):
+            logger.warning(f"Transcription files not found for {request.file_name}")
+            raise HTTPException(
+                status_code=404, 
+                detail="Transcription not found for this file"
+            )
+
+        context_data = TranscriptionData.load(file_path)
+        frame = context_data.find_timeframe(request.context_text)
+        
+        return TimestampResponse(
+            start_time=frame.start_time,
+            end_time=frame.end_time
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_msg = f"Failed to get timestamps: {str(e)}"
+        logger.error(f"{error_msg}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=error_msg)
 
 if __name__ == "__main__":
     import uvicorn
