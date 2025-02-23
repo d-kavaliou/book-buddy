@@ -18,7 +18,7 @@ interface ConversationProps {
 }
 
 const ELEVEN_LABS_API_KEY = import.meta.env.VITE_ELEVEN_LABS_API_KEY as string | undefined;
-const ELEVEN_LABS_AGENT_ID = import.meta.env.ELEVEN_LABS_AGENT_ID as string | undefined;
+const ELEVEN_LABS_AGENT_ID = import.meta.env.VITE_ELEVEN_LABS_AGENT_ID as string | undefined;
 
 if (!ELEVEN_LABS_API_KEY) {
   console.error('Environment variable VITE_ELEVEN_LABS_API_KEY is not defined');
