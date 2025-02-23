@@ -68,6 +68,11 @@ export default function Conversation({ currentTime, audioFileName }: Conversatio
   });
 
   const fetchContext = useCallback(async (): Promise<ContextData | null> => {
+    // Return null if currentTime is less than 1
+    if (currentTime < 1) {
+      return null;
+    }
+
     try {
       const response = await fetch('http://localhost:8000/api/context', {
         method: 'POST',
@@ -102,17 +107,12 @@ export default function Conversation({ currentTime, audioFileName }: Conversatio
       
       // Fetch context
       const contextData = await fetchContext();
-      if (!contextData) {
-        setIsStarting(false);
-        return;
-      }
-      
       setCurrentContext(contextData);
 
       const sessionId = await conversation.startSession({
         agentId: 'Ztv2l2ZSehyU7sZsPhfc',
         dynamicVariables: {
-          context: contextData.context
+          context: contextData?.context || 'No context available yet'
         }
       });
 
