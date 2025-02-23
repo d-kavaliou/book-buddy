@@ -18,16 +18,21 @@ interface ConversationProps {
 }
 
 const ELEVEN_LABS_API_KEY = import.meta.env.VITE_ELEVEN_LABS_API_KEY as string | undefined;
+const ELEVEN_LABS_AGENT_ID = import.meta.env.ELEVEN_LABS_AGENT_ID as string | undefined;
 
 if (!ELEVEN_LABS_API_KEY) {
   console.error('Environment variable VITE_ELEVEN_LABS_API_KEY is not defined');
-  // You might want to handle this error differently depending on your needs
+}
+if (!ELEVEN_LABS_AGENT_ID) {
+  console.error('Environment variable ELEVEN_LABS_AGENT_ID is not defined');
 }
 
 export default function Conversation({ currentTime, audioFileName }: ConversationProps) {
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentContext, setCurrentContext] = useState<ContextData | null>(null);
+  const [firstMessage, setFirstMessage] = useState<string | null>(null);
+  const [history, setHistory] = useState<string | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   
@@ -54,6 +59,8 @@ export default function Conversation({ currentTime, audioFileName }: Conversatio
       
       setCurrentContext(null);
       setError(null);
+      setHistory(null);
+      setFirstMessage(null);
       
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getTracks().forEach(track => track.stop());
@@ -147,19 +154,29 @@ export default function Conversation({ currentTime, audioFileName }: Conversatio
 
       console.log('sessionId to fetch history:', sessionId);
 
-      let history = '';
+      let conversationHistory = '';
+      let nextFirstMessage = null;
+      
       if (sessionId) {
-        history = await fetchConversationHistory(sessionId);
+        conversationHistory = await fetchConversationHistory(sessionId);
+        
+        // Random selection of greeting for returning sessions
+        const greetings = ['hey again', 'hey', 'lets continue'];
+        nextFirstMessage = greetings[Math.floor(Math.random() * greetings.length)];
         
         console.log('Previous session ID:', sessionId);
-        console.log('Conversation history:', history || 'No history found');
+        console.log('Conversation history:', conversationHistory || 'No history found');
       }
 
+      setHistory(conversationHistory);
+      setFirstMessage(nextFirstMessage);
+
       const newSessionId = await conversation.startSession({
-        agentId: 'Ztv2l2ZSehyU7sZsPhfc',
+        agentId: ELEVEN_LABS_AGENT_ID,
         dynamicVariables: {
           context: contextData?.context || 'No context available yet',
-          history: history
+          history: conversationHistory || 'No history available yet',
+          first_message: nextFirstMessage || "Hi, I'm Eric. How can I help you today?"
         }
       });
 
