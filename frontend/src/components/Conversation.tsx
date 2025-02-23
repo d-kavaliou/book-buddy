@@ -101,7 +101,12 @@ export default function Conversation({
     }
   };
 
+  const currentSessionIdRef = useRef<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const updateSessionId = useCallback((newSessionId: string | null) => {
+    currentSessionIdRef.current = newSessionId;
+    setSessionId(newSessionId);
+  }, []);
   
   const conversation = useConversation({
     onConnect: () => {
@@ -109,28 +114,29 @@ export default function Conversation({
       setIsStarting(false);
       setError(null);
     },
-    onDisconnect: (details: DisconnectionDetails) => {
+    onDisconnect: async (details: DisconnectionDetails) => {
       console.log('Disconnection details:', details);
       
-      let reasonMessage = 'Unknown disconnection reason';
-      
       if (details.reason === 'error') {
-        reasonMessage = `Error: ${details.message}`;
         console.error('Connection error context:', details.context);
-      } else if (details.reason === 'agent') {
-        const closeEvent = details.context;
-        reasonMessage = `Agent disconnected (Code: ${closeEvent.code}, ${closeEvent.reason || 'No reason provided'})`;
-      } else if (details.reason === 'user') {
-        reasonMessage = 'User initiated disconnect';
+        
+        // Only attempt reconnect if sessionId is a valid string
+        console.error('Connection error context:', details.context);
+        const currentSessionId = currentSessionIdRef.current;
+        if (typeof currentSessionId === 'string') {
+          await startConversation(currentSessionId);
+        }
+      } else {
+        // Normal cleanup
+        setCurrentContext(null);
+        setError(null);
+        setHistory(null);
+        setFirstMessage(null);
+        setSessionId(null);
+        
+        cleanupMediaStream();
+        cleanupAudioPlayer();
       }
-      
-      setCurrentContext(null);
-      setError(null);
-      setHistory(null);
-      setFirstMessage(null);
-      
-      cleanupMediaStream();
-      cleanupAudioPlayer();
     },
     onMessage: (message) => {
       console.log('Message:', message);
@@ -261,7 +267,7 @@ export default function Conversation({
     }
   }, []);
 
-  const startConversation = useCallback(async () => {
+  const startConversation = useCallback(async (existingSessionId?: string) => {
     try {
       setIsStarting(true);
       setError(null);
@@ -275,43 +281,44 @@ export default function Conversation({
       
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
+
+      const validSessionId = typeof existingSessionId === 'string' ? existingSessionId : undefined;
       
       const contextData = await fetchContext();
       setCurrentContext(contextData);
-
-      console.log('sessionId to fetch history:', sessionId);
-
+  
       let conversationHistory = '';
       let nextFirstMessage = null;
       
-      if (sessionId) {
-        conversationHistory = await fetchConversationHistory(sessionId);
-        
-        // Random selection of greeting for returning sessions
-        const greetings = ['hey again', 'hey', 'lets continue'];
-        nextFirstMessage = greetings[Math.floor(Math.random() * greetings.length)];
-        
-        console.log('Previous session ID:', sessionId);
-        console.log('Conversation history:', conversationHistory || 'No history found');
+      // Only fetch history if we have an existing session
+      if (validSessionId) {
+        try {
+          conversationHistory = await fetchConversationHistory(validSessionId);
+          const greetings = ['lets continue?'];
+          nextFirstMessage = greetings[Math.floor(Math.random() * greetings.length)];
+        } catch (error) {
+          console.warn('Failed to fetch history for existing session, starting new session');
+        }
       }
-
+  
       setHistory(conversationHistory);
       setFirstMessage(nextFirstMessage);
-
+  
+      // Start session with existing ID if available
       const newSessionId = await conversation.startSession({
         agentId: ELEVEN_LABS_AGENT_ID,
+        sessionId: existingSessionId, // Pass existing session ID if available
         dynamicVariables: {
           context: contextData?.context || 'No context available yet',
           history: conversationHistory || 'No history available yet',
-          first_message: nextFirstMessage || "Hi, I'm Eric. How can I help you today?"
+          first_message: nextFirstMessage || "Hi, I'm Book Buddy. How can I help you today?"
         },
         clientTools: clientTools()
       });
-
-      setSessionId(newSessionId);
-      console.log('New session started with ID:', newSessionId);
-
-      // Set initial volume
+  
+      updateSessionId(newSessionId);
+      console.log('Session started with ID:', newSessionId);
+  
       await conversation.setVolume({ volume: 0.8 });
       
     } catch (error) {
@@ -320,7 +327,7 @@ export default function Conversation({
       setIsStarting(false);
       setCurrentContext(null);
       cleanupMediaStream();
-
+  
       if (onPlayerStateChange) {
         onPlayerStateChange(false);
       }

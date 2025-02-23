@@ -12,6 +12,8 @@ interface AudioProcessingError {
   description: string;
 }
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL as string | undefined;
+
 export default function Index() {
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [currentTime, setCurrentTime] = useState<number>(0);
@@ -45,7 +47,7 @@ export default function Index() {
     }
 
     try {
-      const response = await fetch(`http://localhost:8000/uploads/${filename}`);
+      const response = await fetch(`${BACKEND_URL}/uploads/${filename}`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -109,7 +111,7 @@ export default function Index() {
           <FileUpload 
             onFileAccepted={handleFileAccepted}
             setAudioFile={handleProcessedAudio}
-            apiEndpoint="http://localhost:8000"
+            apiEndpoint={`${BACKEND_URL}`}
           />
           
           {audioFile && !isProcessing && (
